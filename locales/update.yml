@@ -82,6 +82,9 @@ update.install.wrong_version:
 update.unsupported.development_build:
   zh-CN: 开发构建，不检查更新
   en: Development builds don’t check for updates
+update.unsupported.portable:
+  zh-CN: 这份 ShellRS 是便携版，不会自动更新，请从下载页获取新版本
+  en: This copy of ShellRS is portable, so it doesn’t update itself. Get the new version from the download page
 update.unsupported.translocated:
   zh-CN: ShellRS 不在“应用程序”文件夹中，无法自动更新。请把它移到“应用程序”文件夹后重新打开
   en: ShellRS isn’t in the Applications folder, so it can’t update itself. Move it to Applications, then open it again

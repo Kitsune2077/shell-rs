@@ -2,7 +2,8 @@
 #
 #   verify   the tag, the CHANGELOG section, the update keys
 #   macos    per-architecture apps: signed, notarized, stapled; update zip and DMG
-#   windows  per-user Inno Setup installer (unsigned for now)
+#   windows  per-user Inno Setup installer (unsigned for now), and the
+#            portable zip: a folder whose data stays beside the program
 #   linux    AppImage
 #   publish  (environment `release`, approved by hand) uploads to R2 behind
 #            dl.shellrs.com, creates the GitHub release, and only then
@@ -205,6 +206,11 @@ jobs:
           & $iscc "/DAppVersion=$env:VERSION" "/DBuildDir=$env:GITHUB_WORKSPACE\target\release" `
             "/O$env:GITHUB_WORKSPACE\dist" packaging\windows\shellrs.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Not in the update manifest: a portable copy does not update itself.
+      # It is signed and uploaded with the rest, for the download page.
+      - name: Portable
+        shell: pwsh
+        run: packaging\windows\portable.ps1 -Version $env:VERSION
       - uses: actions/upload-artifact@v4
         with:
           name: windows

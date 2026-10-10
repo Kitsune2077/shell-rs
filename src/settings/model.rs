@@ -215,7 +215,8 @@ pub struct ExternalCliSettings {
 #[serde(default)]
 pub struct UpdateSettings {
     /// 自动升级: look for a newer ShellRS in the background and download
-    /// it. On unless the user turns it off.
+    /// it. On unless the user turns it off; a portable copy starts with it
+    /// off, since it cannot install what it finds.
     pub automatic: bool,
     /// 更新渠道. A release build starts on the channel it was built for.
     pub channel: Channel,
@@ -224,7 +225,10 @@ pub struct UpdateSettings {
 impl Default for UpdateSettings {
     fn default() -> Self {
         Self {
-            automatic: true,
+            // Off in a portable copy: it cannot replace itself in place,
+            // so it should not even look on its own. The user can still
+            // ask for a check by hand.
+            automatic: !crate::app::is_portable(),
             channel: Channel::of_this_build().unwrap_or(Channel::Stable),
         }
     }

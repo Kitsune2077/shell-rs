@@ -43,6 +43,10 @@ pub enum InstallKind {
 pub enum Unsupported {
     /// Built by hand: no release replaces it.
     DevelopmentBuild,
+    /// Keeps its data beside the executable ([`crate::app::PORTABLE_DIR`]):
+    /// a replacement has to carry the data over, so it comes as a package
+    /// from the download page, not an in-place swap.
+    Portable,
     /// macOS runs it from a read-only copy because it was never moved out of
     /// the folder it was downloaded to.
     Translocated,
@@ -65,6 +69,7 @@ impl Unsupported {
     pub fn reason(&self) -> String {
         let reason = match self {
             Self::DevelopmentBuild => t!("update.unsupported.development_build"),
+            Self::Portable => t!("update.unsupported.portable"),
             Self::Translocated => t!("update.unsupported.translocated"),
             Self::DiskImage => t!("update.unsupported.disk_image"),
             Self::ReadOnly(folder) => {
@@ -96,6 +101,14 @@ pub struct Surroundings<'a> {
 
 /// How this copy of ShellRS can be updated.
 pub fn detect(at: &Surroundings) -> InstallKind {
+    // A portable copy first, on every platform: its data folder travels
+    // with the program, so however this copy would otherwise replace
+    // itself, the data has to move too.
+    if let Some(folder) = at.exe.parent()
+        && (at.exists)(&folder.join(crate::app::PORTABLE_DIR))
+    {
+        return InstallKind::Unsupported(Unsupported::Portable);
+    }
     match at.os {
         "macos" => {
             let Some(bundle) = at.bundle.filter(|bundle| {
@@ -383,6 +396,26 @@ mod tests {
             }),
             InstallKind::Unsupported(Unsupported::NotBundled)
         );
+    }
+
+    #[test]
+    fn a_portable_copy_points_to_the_download_page_whatever_the_platform() {
+        for os in ["macos", "windows", "linux"] {
+            let exe = PathBuf::from("/Apps/ShellRS").join("shellrs");
+            assert_eq!(
+                detect(&Surroundings {
+                    exists: &|path| path.file_name().is_some_and(|name| name == "data"),
+                    ..at(os, &exe)
+                }),
+                InstallKind::Unsupported(Unsupported::Portable),
+                "a data folder beside the executable makes {os} portable"
+            );
+            // Without the folder the platform's own rule applies again.
+            assert_ne!(
+                detect(&at(os, &exe)),
+                InstallKind::Unsupported(Unsupported::Portable)
+            );
+        }
     }
 
     #[test]

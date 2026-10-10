@@ -5,12 +5,43 @@ use std::path::{Path, PathBuf};
 /// Overrides the data directory. Set by tests and handy during development.
 const DATA_DIR_ENV: &str = "SHELLRS_DATA_DIR";
 
+/// The folder beside the executable that makes this copy portable. When it
+/// is there, everything ShellRS keeps between runs lives in it, so the whole
+/// folder can be moved or carried on a USB stick. The package puts a
+/// `README.txt` in it; whoever creates one beside an installed copy turns
+/// that copy portable just the same.
+pub const PORTABLE_DIR: &str = "data";
+
+/// The data directory of a portable copy: [`PORTABLE_DIR`] beside `exe`,
+/// when there is one. `exists` stands for the file system, a parameter so
+/// the rule can be tested anywhere.
+fn portable_dir_at(exe: Option<&Path>, exists: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
+    let dir = exe?.parent()?.join(PORTABLE_DIR);
+    exists(&dir).then_some(dir)
+}
+
+/// Whether this copy is portable. Resolved from where the executable
+/// actually is, which `std::env::current_exe` reports even through the
+/// `shellrs` command's link.
+fn portable_dir() -> Option<PathBuf> {
+    portable_dir_at(std::env::current_exe().ok().as_deref(), &|path| path.is_dir())
+}
+
+/// Whether this copy keeps its data beside the executable, in
+/// [`PORTABLE_DIR`], instead of where the system keeps application data.
+pub fn is_portable() -> bool {
+    portable_dir().is_some()
+}
+
 /// The directory holding ShellRS's own files, e.g.
 /// `~/Library/Application Support/shellrs` on macOS. Falls back to the
 /// current directory on the platforms where `dirs` has nothing to offer.
 pub fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
         return PathBuf::from(dir);
+    }
+    if let Some(dir) = portable_dir() {
+        return dir;
     }
     dirs::data_dir()
         .map(|dir| dir.join("shellrs"))
@@ -32,10 +63,12 @@ pub fn keys_dir() -> PathBuf {
 }
 
 /// Where updates are downloaded to: the user's cache folder. With
-/// `SHELLRS_DATA_DIR` set it is beside the data instead, so a test or
-/// development instance never shares downloads with the installed app.
+/// `SHELLRS_DATA_DIR` set, or in a portable copy, it is beside the data
+/// instead, so a test or development instance never shares downloads with
+/// the installed app, and a portable copy leaves nothing on a machine it
+/// was only plugged into.
 pub fn updates_dir() -> PathBuf {
-    if std::env::var_os(DATA_DIR_ENV).is_some() {
+    if std::env::var_os(DATA_DIR_ENV).is_some() || is_portable() {
         return data_dir().join("updates");
     }
     dirs::cache_dir()
@@ -102,7 +135,7 @@ fn pipe_name(dir: &Path) -> String {
 mod tests {
     use std::path::Path;
 
-    use super::pipe_name;
+    use super::{pipe_name, portable_dir_at};
 
     #[test]
     fn each_data_directory_gets_a_pipe_of_its_own() {
@@ -116,6 +149,41 @@ mod tests {
         assert_ne!(
             pipe,
             pipe_name(Path::new("/Users/other/AppData/Roaming/shellrs"))
+        );
+    }
+
+    #[test]
+    fn a_data_folder_beside_the_executable_makes_the_copy_portable() {
+        let folder = tempfile::tempdir().unwrap();
+        let exe = folder.path().join("ShellRS").join("shellrs.exe");
+        let is_dir = |path: &Path| path.is_dir();
+
+        assert_eq!(
+            portable_dir_at(Some(exe.as_path()), &is_dir),
+            None,
+            "nothing beside the executable yet"
+        );
+
+        let data = exe.parent().unwrap().join(super::PORTABLE_DIR);
+        std::fs::create_dir_all(&data).unwrap();
+        assert_eq!(portable_dir_at(Some(exe.as_path()), &is_dir), Some(data));
+
+        // What `std::env::current_exe` could not tell: not portable either
+        // way, never a panic.
+        assert_eq!(portable_dir_at(None, &is_dir), None);
+
+        // A file of that name is not the folder: the check looks for a
+        // directory, and so does the injected file system here.
+        let file = folder.path().join("shellrs.exe");
+        std::fs::write(&file, "binary").unwrap();
+        let named_data = file.parent().unwrap().join(super::PORTABLE_DIR);
+        std::fs::write(&named_data, "").unwrap();
+        assert_eq!(
+            portable_dir_at(
+                Some(file.as_path()),
+                &|path| std::fs::metadata(path).is_ok_and(|meta| meta.is_dir()),
+            ),
+            None
         );
     }
 }
